@@ -2,50 +2,54 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "inventory-dashboard"
-        CONTAINER_NAME = "inventory-dashboard-container"
-        PORT = "5000"
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-cred')
+        IMAGE_NAME = "akash914204/inventory-dashboard"
     }
 
     stages {
-        stage('Clone Repository') {
+        stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/Akash914204/inventory-dashboard.git'
+                echo 'Cloning repository...'
+                checkout scm
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                script {
-                    sh "docker build -t ${IMAGE_NAME}:latest ."
-                }
+                echo 'Building Docker image...'
+                sh 'docker build -t $IMAGE_NAME:latest .'
             }
         }
 
-        stage('Run Docker Container') {
+        stage('Push to Docker Hub') {
             steps {
-                script {
-                    // Stop old container if running
-                    sh "docker rm -f ${CONTAINER_NAME} || true"
-                    // Run new container
-                    sh "docker run -d --name ${CONTAINER_NAME} -p ${PORT}:${PORT} ${IMAGE_NAME}:latest"
-                }
+                echo 'Pushing image to Docker Hub...'
+                sh '''
+                    echo "$DOCKERHUB_CREDENTIALS_PSW" | docker login -u "$DOCKERHUB_CREDENTIALS_USR" --password-stdin
+                    docker push $IMAGE_NAME:latest
+                '''
             }
         }
 
-        stage('Health Check') {
+        stage('Deploy Container') {
             steps {
-                script {
-                    sh "sleep 5"
-                    sh "curl -f http://127.0.0.1:${PORT} || echo 'App not reachable'"
-                }
+                echo 'Deploying container...'
+                sh '''
+                    docker stop inventory-dashboard || true
+                    docker rm inventory-dashboard || true
+                    docker run -d --name inventory-dashboard -p 5000:5000 $IMAGE_NAME:latest
+                '''
             }
         }
     }
 
     post {
-        always {
-            echo 'Pipeline finished!'
+        success {
+            echo '✅ Deployment successful!'
+        }
+        failure {
+            echo '❌ Build or Deployment failed.'
         }
     }
 }
+
